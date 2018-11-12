@@ -5,4 +5,11 @@ GIT_ROOT=${GIT_ROOT:-$(git rev-parse --show-toplevel)}
 . "${GIT_ROOT}/.envrc"
 
 docker push ${OPERATOR_DOCKER_ORGANIZATION}/cf-operator:${VERSION_TAG}
+sed -i "s@repository: .*@repository: ${OPERATOR_DOCKER_ORGANIZATION}/cf-operator@" "${GIT_ROOT}/deploy/helm/cf-operator/values.yaml"
+sed -i "s@tag: .*@tag: ${VERSION_TAG}@" "${GIT_ROOT}/deploy/helm/cf-operator/values.yaml"
 
+echo "patched deploy/helm/cf-operator/values.yaml with the new tag."
+echo "Commit these changes with"
+echo
+echo "  git commit -mv 'Update helm chart to latest version' deploy/helm/cf-operator/values.yaml"
+echo

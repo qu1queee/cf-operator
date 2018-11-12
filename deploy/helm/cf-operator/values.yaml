@@ -1,0 +1,14 @@
+# Default values for cf-operator.
+image:
+  repository: splatform/cf-operator
+  tag: 0.0.0
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
