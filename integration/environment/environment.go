@@ -6,19 +6,13 @@ import (
 	"path/filepath"
 	"time"
 
-	"code.cloudfoundry.org/cf-operator/integration/machinery"
 	"code.cloudfoundry.org/cf-operator/pkg/client/clientset/versioned"
 	"code.cloudfoundry.org/cf-operator/pkg/operator"
-	"github.com/pkg/errors"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
-	apiv1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -31,13 +25,12 @@ type StopFunc func()
 // Environment starts our operator and handles interaction with the k8s
 // cluster used in the tests
 type Environment struct {
-	machinery.Machine
-	mgr          manager.Manager
-	pollTimeout  time.Duration
-	pollInterval time.Duration
-	kubeConfig   *rest.Config
-	log          *zap.SugaredLogger
-	stop         chan struct{}
+	Machine
+	Catalog
+	mgr        manager.Manager
+	kubeConfig *rest.Config
+	log        *zap.SugaredLogger
+	stop       chan struct{}
 
 	LogRecorded *observer.ObservedLogs
 	Namespace   string
@@ -46,9 +39,11 @@ type Environment struct {
 // NewEnvironment returns a new struct
 func NewEnvironment() *Environment {
 	return &Environment{
-		Namespace:    "",
-		pollTimeout:  30 * time.Second,
-		pollInterval: 500 * time.Millisecond,
+		Namespace: "",
+		Machine: Machine{
+			pollTimeout:  30 * time.Second,
+			pollInterval: 500 * time.Millisecond,
+		},
 	}
 }
 
@@ -70,29 +65,6 @@ func (e *Environment) Setup() (StopFunc, error) {
 			close(e.stop)
 		}
 	}, nil
-}
-
-// WaitForPod blocks until the pod is running. It fails after the timeout.
-func (e *Environment) WaitForPod(name string) error {
-	return wait.PollImmediate(e.pollInterval, e.pollTimeout, func() (bool, error) {
-		return e.PodRunning(name)
-	})
-}
-
-// PodRunning returns true if the pod by that name is in state running
-func (e *Environment) PodRunning(name string) (bool, error) {
-	pod, err := e.Clientset.CoreV1().Pods(e.Namespace).Get(name, v1.GetOptions{})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, errors.Wrapf(err, "failed to query for pod by name: %s", name)
-	}
-
-	if pod.Status.Phase == apiv1.PodRunning {
-		return true, nil
-	}
-	return false, nil
 }
 
 // AllLogMessages returns only the message part of existing logs to aid in debugging

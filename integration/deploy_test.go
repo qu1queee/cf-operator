@@ -17,7 +17,7 @@ var _ = Describe("Deploy", func() {
 			defer tearDown()
 
 			// check for pod
-			err = env.WaitForPod("diego-pod")
+			err = env.WaitForPod(env.Namespace, "diego-pod")
 			Expect(err).NotTo(HaveOccurred(), "error waiting for pod from deployment")
 		})
 	})

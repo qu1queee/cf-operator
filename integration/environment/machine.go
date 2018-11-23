@@ -1,22 +1,76 @@
-package machinery
+package environment
 
 import (
+	"time"
+
 	fisv1 "code.cloudfoundry.org/cf-operator/pkg/apis/fissile/v1alpha1"
 	"code.cloudfoundry.org/cf-operator/pkg/client/clientset/versioned"
+	"github.com/pkg/errors"
 
+	apiv1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 )
 
 // Machine produces and destroys resources for tests
 type Machine struct {
+	pollTimeout  time.Duration
+	pollInterval time.Duration
+
 	Clientset          *kubernetes.Clientset
 	VersionedClientset *versioned.Clientset
 }
 
 // TearDownFunc tears down the resource
 type TearDownFunc func()
+
+// WaitForPod blocks until the pod is running. It fails after the timeout.
+func (m *Machine) WaitForPod(namespace string, name string) error {
+	return wait.PollImmediate(m.pollInterval, m.pollTimeout, func() (bool, error) {
+		return m.PodRunning(namespace, name)
+	})
+}
+
+// PodRunning returns true if the pod by that name is in state running
+func (m *Machine) PodRunning(namespace string, name string) (bool, error) {
+	pod, err := m.Clientset.CoreV1().Pods(namespace).Get(name, v1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, errors.Wrapf(err, "failed to query for pod by name: %s", name)
+	}
+
+	if pod.Status.Phase == apiv1.PodRunning {
+		return true, nil
+	}
+	return false, nil
+}
+
+// WaitForCRDeletion blocks until the CR is deleted
+func (m *Machine) WaitForCRDeletion(namespace string, name string) error {
+	return wait.PollImmediate(m.pollInterval, m.pollTimeout, func() (bool, error) {
+		found, err := m.HasFissileCR(namespace, name)
+		return !found, err
+	})
+}
+
+// HasFissileCR returns true if the pod by that name is in state running
+func (m *Machine) HasFissileCR(namespace string, name string) (bool, error) {
+	client := m.VersionedClientset.Fissile().BOSHDeployments(namespace)
+	_, err := client.Get(name, v1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, errors.Wrapf(err, "failed to query for pod by name: %s", name)
+	}
+
+	return true, nil
+}
 
 // CreateConfigMap creates a ConfigMap and returns a function to delete it
 func (m *Machine) CreateConfigMap(namespace string, configMap corev1.ConfigMap) (TearDownFunc, error) {
@@ -54,34 +108,8 @@ func (m *Machine) UpdateFissileCR(namespace string, deployment fisv1.BOSHDeploym
 	}, err
 }
 
-// DefaultBOSHManifest for tests
-func (m *Machine) DefaultBOSHManifest(name string) corev1.ConfigMap {
-	return corev1.ConfigMap{
-		ObjectMeta: v1.ObjectMeta{Name: name},
-		Data: map[string]string{
-			"manifest": `instance-groups:
-- name: diego
-  instances: 3
-- name: myqsl
-`,
-		},
-	}
-}
-
-// DefaultSecret for tests
-func (m *Machine) DefaultSecret(name string) corev1.Secret {
-	return corev1.Secret{
-		ObjectMeta: v1.ObjectMeta{Name: name},
-		StringData: map[string]string{},
-	}
-}
-
-// DefaultFissileCR fissile deployment CR
-func (m *Machine) DefaultFissileCR(name, manifestRef string) fisv1.BOSHDeployment {
-	return fisv1.BOSHDeployment{
-		ObjectMeta: v1.ObjectMeta{Name: name},
-		Spec: fisv1.BOSHDeploymentSpec{
-			ManifestRef: manifestRef,
-		},
-	}
+// DeleteFissileCR deletes a BOSHDeployment custom resource
+func (m *Machine) DeleteFissileCR(namespace string, name string) error {
+	client := m.VersionedClientset.Fissile().BOSHDeployments(namespace)
+	return client.Delete(name, &v1.DeleteOptions{})
 }

@@ -19,7 +19,7 @@ var _ = Describe("Lifecycle", func() {
 
 	Context("when correctly setup", func() {
 		BeforeEach(func() {
-			fissileCR = env.DefaultFissileCR("test", "manifest")
+			fissileCR = env.DefaultFissileCR("testcr", "manifest")
 			newManifest = corev1.ConfigMap{
 				ObjectMeta: v1.ObjectMeta{Name: "newmanifest"},
 				Data: map[string]string{
@@ -41,7 +41,7 @@ var _ = Describe("Lifecycle", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer tearDown()
 
-			err = env.WaitForPod("diego-pod")
+			err = env.WaitForPod(env.Namespace, "diego-pod")
 			Expect(err).NotTo(HaveOccurred(), "error waiting for pod from initial deployment")
 
 			// Update
@@ -53,19 +53,20 @@ var _ = Describe("Lifecycle", func() {
 			_, _, err = env.UpdateFissileCR(env.Namespace, *versionedCR)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = env.WaitForPod("updated-pod")
-			fmt.Printf("%+v", env.AllLogMessages())
+			err = env.WaitForPod(env.Namespace, "updated-pod")
 			Expect(err).NotTo(HaveOccurred(), "error waiting for pod from updated deployment")
 
 			// TODO after update we still have diego-pod around
-			Expect(env.PodRunning("diego-pod")).To(BeTrue())
-			Expect(env.PodRunning("updated-pod")).To(BeTrue())
+			Expect(env.PodRunning(env.Namespace, "diego-pod")).To(BeTrue())
+			Expect(env.PodRunning(env.Namespace, "updated-pod")).To(BeTrue())
 
-			// TODO delete: use finalizers instead of Reconcile()?
+			err = env.DeleteFissileCR(env.Namespace, "testcr")
+			Expect(err).NotTo(HaveOccurred(), "error deleting custom resource")
+			err = env.WaitForCRDeletion(env.Namespace, "testcr")
+			Expect(err).NotTo(HaveOccurred(), "error waiting for custom resource deletion")
 
-			// delete
-			// wait
-			// check
+			// TODO delete: use finalizers instead of Reconcile()? find some output
+			fmt.Printf("%+v", env.AllLogMessages())
 
 		})
 	})
