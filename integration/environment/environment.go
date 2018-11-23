@@ -75,19 +75,33 @@ func (e *Environment) Setup() (StopFunc, error) {
 // WaitForPod blocks until the pod is running. It fails after the timeout.
 func (e *Environment) WaitForPod(name string) error {
 	return wait.PollImmediate(e.pollInterval, e.pollTimeout, func() (bool, error) {
-		pod, err := e.Clientset.CoreV1().Pods(e.Namespace).Get(name, v1.GetOptions{})
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return false, nil
-			}
-			return false, errors.Wrapf(err, "failed to poll for %s", name)
-		}
-
-		if pod.Status.Phase == apiv1.PodRunning {
-			return true, nil
-		}
-		return false, nil
+		return e.PodRunning(name)
 	})
+}
+
+// PodRunning returns true if the pod by that name is in state running
+func (e *Environment) PodRunning(name string) (bool, error) {
+	pod, err := e.Clientset.CoreV1().Pods(e.Namespace).Get(name, v1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, errors.Wrapf(err, "failed to query for pod by name: %s", name)
+	}
+
+	if pod.Status.Phase == apiv1.PodRunning {
+		return true, nil
+	}
+	return false, nil
+}
+
+// AllLogMessages returns only the message part of existing logs to aid in debugging
+func (e *Environment) AllLogMessages() (msgs []string) {
+	for _, m := range e.LogRecorded.All() {
+		msgs = append(msgs, m.Message)
+	}
+
+	return
 }
 
 func (e *Environment) setupCFOperator() (err error) {

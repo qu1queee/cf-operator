@@ -1,10 +1,10 @@
 package machinery
 
 import (
-	fissile "code.cloudfoundry.org/cf-operator/pkg/apis/fissile/v1alpha1"
+	fisv1 "code.cloudfoundry.org/cf-operator/pkg/apis/fissile/v1alpha1"
 	"code.cloudfoundry.org/cf-operator/pkg/client/clientset/versioned"
 
-	apiv1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -19,7 +19,7 @@ type Machine struct {
 type TearDownFunc func()
 
 // CreateConfigMap creates a ConfigMap and returns a function to delete it
-func (m *Machine) CreateConfigMap(namespace string, configMap apiv1.ConfigMap) (TearDownFunc, error) {
+func (m *Machine) CreateConfigMap(namespace string, configMap corev1.ConfigMap) (TearDownFunc, error) {
 	client := m.Clientset.CoreV1().ConfigMaps(namespace)
 	_, err := client.Create(&configMap)
 	return func() {
@@ -28,7 +28,7 @@ func (m *Machine) CreateConfigMap(namespace string, configMap apiv1.ConfigMap) (
 }
 
 // CreateSecret creates a secret and returns a function to delete it
-func (m *Machine) CreateSecret(namespace string, secret apiv1.Secret) (TearDownFunc, error) {
+func (m *Machine) CreateSecret(namespace string, secret corev1.Secret) (TearDownFunc, error) {
 	client := m.Clientset.CoreV1().Secrets(namespace)
 	_, err := client.Create(&secret)
 	return func() {
@@ -37,17 +37,26 @@ func (m *Machine) CreateSecret(namespace string, secret apiv1.Secret) (TearDownF
 }
 
 // CreateFissileCR creates a BOSHDeployment custom resource and returns a function to delete it
-func (m *Machine) CreateFissileCR(namespace string, deployment fissile.BOSHDeployment) (TearDownFunc, error) {
+func (m *Machine) CreateFissileCR(namespace string, deployment fisv1.BOSHDeployment) (*fisv1.BOSHDeployment, TearDownFunc, error) {
 	client := m.VersionedClientset.Fissile().BOSHDeployments(namespace)
-	_, err := client.Create(&deployment)
-	return func() {
+	d, err := client.Create(&deployment)
+	return d, func() {
+		client.Delete(deployment.GetName(), &v1.DeleteOptions{})
+	}, err
+}
+
+// UpdateFissileCR creates a BOSHDeployment custom resource and returns a function to delete it
+func (m *Machine) UpdateFissileCR(namespace string, deployment fisv1.BOSHDeployment) (*fisv1.BOSHDeployment, TearDownFunc, error) {
+	client := m.VersionedClientset.Fissile().BOSHDeployments(namespace)
+	d, err := client.Update(&deployment)
+	return d, func() {
 		client.Delete(deployment.GetName(), &v1.DeleteOptions{})
 	}, err
 }
 
 // DefaultBOSHManifest for tests
-func (m *Machine) DefaultBOSHManifest(name string) apiv1.ConfigMap {
-	return apiv1.ConfigMap{
+func (m *Machine) DefaultBOSHManifest(name string) corev1.ConfigMap {
+	return corev1.ConfigMap{
 		ObjectMeta: v1.ObjectMeta{Name: name},
 		Data: map[string]string{
 			"manifest": `instance-groups:
@@ -60,18 +69,18 @@ func (m *Machine) DefaultBOSHManifest(name string) apiv1.ConfigMap {
 }
 
 // DefaultSecret for tests
-func (m *Machine) DefaultSecret(name string) apiv1.Secret {
-	return apiv1.Secret{
+func (m *Machine) DefaultSecret(name string) corev1.Secret {
+	return corev1.Secret{
 		ObjectMeta: v1.ObjectMeta{Name: name},
 		StringData: map[string]string{},
 	}
 }
 
-// DefaultFissileCR for tests
-func (m *Machine) DefaultFissileCR(name, manifestRef string) fissile.BOSHDeployment {
-	return fissile.BOSHDeployment{
+// DefaultFissileCR fissile deployment CR
+func (m *Machine) DefaultFissileCR(name, manifestRef string) fisv1.BOSHDeployment {
+	return fisv1.BOSHDeployment{
 		ObjectMeta: v1.ObjectMeta{Name: name},
-		Spec: fissile.BOSHDeploymentSpec{
+		Spec: fisv1.BOSHDeploymentSpec{
 			ManifestRef: manifestRef,
 		},
 	}

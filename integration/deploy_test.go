@@ -12,7 +12,7 @@ var _ = Describe("Deploy", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer tearDown()
 
-			tearDown, err = env.CreateFissileCR(env.Namespace, env.DefaultFissileCR("test", "manifest"))
+			_, tearDown, err = env.CreateFissileCR(env.Namespace, env.DefaultFissileCR("test", "manifest"))
 			Expect(err).NotTo(HaveOccurred())
 			defer tearDown()
 
