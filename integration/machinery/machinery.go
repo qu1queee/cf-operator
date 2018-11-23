@@ -36,8 +36,8 @@ func (m *Machine) CreateSecret(namespace string, secret apiv1.Secret) (TearDownF
 	}, err
 }
 
-// CreateBOSHDeployment creates a BOSHDeployment and returns a function to delete it
-func (m *Machine) CreateBOSHDeployment(namespace string, deployment fissile.BOSHDeployment) (TearDownFunc, error) {
+// CreateFissileCR creates a BOSHDeployment custom resource and returns a function to delete it
+func (m *Machine) CreateFissileCR(namespace string, deployment fissile.BOSHDeployment) (TearDownFunc, error) {
 	client := m.VersionedClientset.Fissile().BOSHDeployments(namespace)
 	_, err := client.Create(&deployment)
 	return func() {
@@ -45,8 +45,8 @@ func (m *Machine) CreateBOSHDeployment(namespace string, deployment fissile.BOSH
 	}, err
 }
 
-// DefaultConfigMap for tests
-func (m *Machine) DefaultConfigMap(name string) apiv1.ConfigMap {
+// DefaultBOSHManifest for tests
+func (m *Machine) DefaultBOSHManifest(name string) apiv1.ConfigMap {
 	return apiv1.ConfigMap{
 		ObjectMeta: v1.ObjectMeta{Name: name},
 		Data: map[string]string{
@@ -67,8 +67,8 @@ func (m *Machine) DefaultSecret(name string) apiv1.Secret {
 	}
 }
 
-// DefaultBOSHDeployment for tests
-func (m *Machine) DefaultBOSHDeployment(name, manifestRef string) fissile.BOSHDeployment {
+// DefaultFissileCR for tests
+func (m *Machine) DefaultFissileCR(name, manifestRef string) fissile.BOSHDeployment {
 	return fissile.BOSHDeployment{
 		ObjectMeta: v1.ObjectMeta{Name: name},
 		Spec: fissile.BOSHDeploymentSpec{
