@@ -293,10 +293,9 @@ func (m *Manifest) dataGatheringJob(namespace string) (*ejv1.ExtendedJob, error)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to calculate release image for data gathering")
 			}
-
 			// Create an init container that copies sources
 			// TODO: destination should also contain release name, to prevent overwrites
-			initContainers = m.AppendToContainerList(boshJob, releaseImage, "/var/vcap/data-gathering/jobs-src/", generateVolumeName("data-gathering"))
+			initContainers = append(initContainers, m.JobSpecCopierContainer(releaseName, releaseImage, generateVolumeName("data-gathering"), "/var/vcap/data-gathering"))
 		}
 
 		// One container per Instance Group
@@ -410,7 +409,8 @@ func (m *Manifest) jobsToInitContainers(igName string, jobs []Job, namespace str
 		if err != nil {
 			return []v1.Container{}, err
 		}
-		initContainers = m.AppendToContainerList(job, releaseImage, "/var/vcap/rendering/jobs-src/", "rendering-data")
+		initContainers = append(initContainers, m.JobSpecCopierContainer(job.Name, releaseImage, "rendering-data", "/var/vcap/rendering"))
+
 	}
 
 	_, resolvedPropertiesSecretName := m.CalculateEJobOutputSecretPrefixAndName(
@@ -862,19 +862,12 @@ func (m *Manifest) ApplyBPMInfo(kubeConfig *KubeConfig, allResolvedProperties ma
 	return nil
 }
 
-// AppendToContainerList will append one container to a v1.Container{}
-func (m *Manifest) AppendToContainerList(job Job, releaseImage string, containerReleasePath string, volumeMountName string) []v1.Container {
-	var containerName string
-	initContainers := []v1.Container{}
+// JobSpecCopierContainer will return a v1.Container{} with the populated field
+// TODO: fix inContainerReleasePath path
+func (m *Manifest) JobSpecCopierContainer(containerName string, releaseImage string, volumeMountName string, containerMountPath string) v1.Container {
 
-	inContainerReleasePath := filepath.Join(containerReleasePath, job.Release)
-	containerMountPath := strings.Split(containerReleasePath, "/jobs-src/")[0]
-
-	if containerName = job.Name; strings.Contains(containerMountPath, "data-gathering") {
-		containerName = job.Release
-	}
-
-	initContainers = append(initContainers, v1.Container{
+	inContainerReleasePath := "/var/vcap/all-releases/jobs-src"
+	initContainers := v1.Container{
 		Name:  fmt.Sprintf("spec-copier-%s", containerName),
 		Image: releaseImage,
 		VolumeMounts: []v1.VolumeMount{
@@ -888,7 +881,7 @@ func (m *Manifest) AppendToContainerList(job Job, releaseImage string, container
 			"-c",
 			fmt.Sprintf(`mkdir -p "%s" && cp -ar /var/vcap/jobs-src/* "%s"`, inContainerReleasePath, inContainerReleasePath),
 		},
-	})
+	}
 
 	return initContainers
 }

@@ -109,12 +109,12 @@ var _ = Describe("ConvertToKube", func() {
 		It("verify job init containers fields", func() {
 			kubeConfig, err := m.ConvertToKube("foo")
 			Expect(err).ShouldNot(HaveOccurred())
-			jobDG := kubeConfig.DataGatheringJob.Spec.Template.Spec.InitContainers[0]
-
+			jobDG := kubeConfig.DataGatheringJob.Spec.Template.Spec
 			// Test init containers in the datagathering job
-			Expect(jobDG.Name).To(Equal("spec-copier-cflinuxfs3"))
-			Expect(jobDG.VolumeMounts[0].MountPath).To(Equal("/var/vcap/data-gathering"))
-
+			Expect(jobDG.InitContainers[0].Name).To(Equal("spec-copier-redis"))
+			Expect(jobDG.InitContainers[1].Name).To(Equal("spec-copier-cflinuxfs3"))
+			Expect(jobDG.InitContainers[0].VolumeMounts[0].MountPath).To(Equal("/var/vcap/data-gathering"))
+			Expect(jobDG.InitContainers[1].VolumeMounts[0].MountPath).To(Equal("/var/vcap/data-gathering"))
 		})
 	})
 
