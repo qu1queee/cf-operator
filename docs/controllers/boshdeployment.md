@@ -2,21 +2,12 @@
 
 - [BOSHDeployment](#boshdeployment)
   - [Description](#description)
-  - [Reconcilers](#reconcilers)
-    - [Deployment Reconciler](#deployment-reconciler)
-      - [Watches for](#watches-for)
-      - [Creates/updates](#createsupdates)
-    - [Generated Variable Reconciler](#generated-variable-reconciler)
-      - [Watches for](#watches-for-1)
-      - [Creates/updates](#createsupdates-1)
-    - [BPM Reconciler](#bpm-reconciler)
-      - [Watches for](#watches-for-2)
-      - [Creates/updates](#createsupdates-2)
-    - [Updates and Delete](#updates-and-delete)
-    - [Update](#update)
-    - [Delete](#delete)
-  - [`BOSHDeployment` Examples](#boshdeployment-examples)
-
+  - [BDPL Component](#bdpl-component)
+    - [BOSHDeployment Controller](#boshdeployment-controller)
+    - [Generate Variables Controller](#generate-variables-controller)
+    - [BPM Controller](#bpm-controller)
+  - [BDPL Abstract view](#bdpl-abstract-view)
+  - [BOSHDeployment resource examples](#boshdeployment-resource-examples)
 ## Description
 
 A BOSH deployment is created from a deployment manifest and optionally ops files.
