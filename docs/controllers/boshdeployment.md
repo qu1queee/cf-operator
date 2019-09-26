@@ -8,6 +8,7 @@
     - [BPM Controller](#bpm-controller)
   - [BDPL Abstract view](#bdpl-abstract-view)
   - [BOSHDeployment resource examples](#boshdeployment-resource-examples)
+
 ## Description
 
 A BOSH deployment is created from a deployment manifest and optionally ops files.
@@ -32,11 +33,7 @@ The following, is a **BDPL** component diagram that covers the set of controller
 
 From the above diagram we can understand a couple of things. Firstly, at the very top, we have the `cf-operator` , which is a long running application with a namespaced scope. When the `cf-operator` pod is initialized it will automatically register all controllers into the [Kubernetes Controller Manager](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/).
 
-
 At a first glance the above diagram could look complex, however it can be explained easily if we focus on each controller main functions: `Reconciliation & Watch` 
-
-
-
 
 ### **_BOSHDeployment Controller_**
 
@@ -121,15 +118,12 @@ As the `BOSHDeployment` is deleted, all owned resources are automatically delete
 
 Persistent volumes are left behind.
 
-
 ## BDPL Abstract view
 
 The following is another diagram that explains the whole BOSHDeployment component controllers flow, in a more high level perspective.
 
 ![deployment-state](https://docs.google.com/drawings/d/e/2PACX-1vTsCO5USd8AJIk_uHMRKl0NABuW85uVGJNebNvgI0Hz_9jhle6fcynLTcHh8cxW6lMgaV_DWyPEvm2-/pub?w=3161&h=2376)
 [edit](https://docs.google.com/drawings/d/126ExNqPxDg1LcB14pbtS5S-iJzLYPyXZ5Jr9vTfFqXA/edit?usp=sharing)
-
-
 
 ## BOSHDeployment resource examples
 

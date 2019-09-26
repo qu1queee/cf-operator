@@ -34,11 +34,13 @@ The following, is a **ExtendedJob** component diagram that covers the set of con
 This is the controller responsible of implementing Errands, this will led to the generation of a Kubernetes job, in order to complete a task.
 
 #### Watches
+
 - `ExtendedJob` resources: Create and Update
 - `ConfigMaps`: Update
 - `Secrets`: Create and Update
 
 #### Reconciliation
+
 - When an `ExtendedJob` instance is generated, it will create Kubernetes Job.
 - The generation of new Kubernetes Jobs, will serve also as the trigger for the `Job Controller`, to start the Reconciliation.
 
@@ -69,9 +71,6 @@ automatically be restarted if its environment/mounts have changed, due to a
 
 - Once `updateOnConfigChange` is enabled, modifying the `data` of any `ConfigMap` or `Secret` referenced by the `template` section of the job will trigger the job again.
 
-
-
-
 ### **_Job Controller_**
 
 ![job-controller-flow](quarks_ejobjobcontroller_flow.png)
@@ -79,9 +78,11 @@ automatically be restarted if its environment/mounts have changed, due to a
 This is an auxiliary controller that relies on the Errand Controller output. It will be watching for Kubernetes Jobs that Succeded or Failed, and eventually it will generate Kubernetes secrets.
 
 #### Watches
+
 - `Jobs`: Succedded or Failed
 
 #### Reconciliation
+
 - Generate Kubernetes secrets(versioned them)
 
 #### Highlights
@@ -123,7 +124,9 @@ Each versioned secret has the following characteristics:
 ## Relationship with the BDPL component
 
 ![bdpl-ejob-relationship](quarks_bdpl_and_ejob_flow.png)
+
+The above image illustrates the interaction of the **BOSHDeployment** Controller with the **Errand** Controller and how the output of this one, serves as the trigger for the **Job** Controller.
+
 ## `ExtendedJob` Examples
 
 See https://github.com/cloudfoundry-incubator/cf-operator/tree/master/docs/examples/extended-job
-s
