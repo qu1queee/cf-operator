@@ -36,12 +36,12 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 
 	BeforeEach(func() {
 		// Values required to define a patch mechanism
-		patchPath = fmt.Sprintf("%s%s%s", "/metadata/labels/quarks.cloudfoundry.org", "~1", "pod-designation")
+		patchPath = fmt.Sprintf("%s%s%s", "/metadata/labels/quarks.cloudfoundry.org", "~1", "pod-active")
 		patchValue = "true"
 		patchOp = "add"
 		eventReason = "active-passive"
 		qStsName = fmt.Sprintf("test-ap-qsts-%s", helper.RandString(5))
-		podDesignationLabel = "quarks.cloudfoundry.org/pod-designation=active"
+		podDesignationLabel = "quarks.cloudfoundry.org/pod-active=active"
 		defaultPodLabel = "testpod=yes"
 	})
 
@@ -52,7 +52,7 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 		// Expect(env.WaitForPVCsDelete(env.Namespace)).To(Succeed())
 	})
 
-	Context("when pod-designation label is not present", func() {
+	Context("when pod-active label is not present", func() {
 		sleepCMD := []string{"/bin/sh", "-c", "sleep 2"}
 		It("should label a single pod out of one", func() {
 			By("Creating a QuarksStatefulSet with a valid CRD probe cmd")
@@ -76,7 +76,7 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Wait for pod with pod-designation label to be ready")
+			By("Wait for pod with pod-active label to be ready")
 			err = env.WaitForPods(env.Namespace, podDesignationLabel)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -109,7 +109,7 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 
 	})
 
-	Context("when pod-designation label is present in one pod", func() {
+	Context("when pod-active label is present in one pod", func() {
 
 		sleepCMD := []string{"/bin/sh", "-c", "sleep 2"}
 
@@ -142,7 +142,7 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 		})
 	})
 
-	Context("when pod-designation label is present in one pod and probe fails", func() {
+	Context("when pod-active label is present in one pod and probe fails", func() {
 
 		cmdSleepTypo := []string{"/bin/sh", "-c", "sleeps 2"}
 
@@ -160,7 +160,7 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 			err = env.WaitForPodReady(env.Namespace, podNameByIndex(qStsName, "0"))
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Adding the pod-designation label to pod with index 0")
+			By("Adding the pod-active label to pod with index 0")
 			err = env.PatchPod(env.Namespace, podNameByIndex(qStsName, "0"), patchOp, patchPath, patchValue)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -177,7 +177,7 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Waiting for active/passive controller to remove the pod-designation label")
+			By("Waiting for active/passive controller to remove the pod-active label")
 			err = wait.PollImmediate(5*time.Second, 35*time.Second, func() (bool, error) {
 				return env.GetNamespaceEvents(env.Namespace,
 					objectName,
@@ -195,7 +195,7 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 		})
 	})
 
-	Context("when pod-designation label is present in multiple pods and only one probe pass", func() {
+	Context("when pod-active label is present in multiple pods and only one probe pass", func() {
 		// two set of cmds, one that runs as the CRD probe
 		// the second one, runs as a patch, so that the next CRD probe executiong will pass
 		cmdCatScript := []string{"/bin/sh", "-c", "cat /tmp/busybox-script.sh"}
@@ -221,7 +221,7 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 			err = env.WaitForPodReady(env.Namespace, podNameByIndex(qStsName, "2"))
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Adding the pod-designation label to all pods")
+			By("Adding the pod-active label to all pods")
 			err = env.PatchPod(env.Namespace, podNameByIndex(qStsName, "0"), patchOp, patchPath, patchValue)
 			Expect(err).NotTo(HaveOccurred())
 			err = env.PatchPod(env.Namespace, podNameByIndex(qStsName, "1"), patchOp, patchPath, patchValue)
@@ -385,6 +385,92 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 		})
 	})
 
+	Context("when multiple pods are active only one remains active", func() {
+		cmdCatScript := []string{"/bin/sh", "-c", "cat /tmp/busybox-script.sh"}
+		cmdTouchScript := []string{"/bin/sh", "-c", "touch /tmp/busybox-script.sh"}
+		containerName := "busybox"
+		It("Creating a QuarksStatefulSet", func() {
+			By("Defining a probe cmd that will fail")
+			qSts, tearDown, err := env.CreateQuarksStatefulSet(env.Namespace, env.QstsWithProbeMultiplePods(
+				qStsName,
+				cmdCatScript,
+			))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(qSts).NotTo(Equal(nil))
+			defer func(tdf machine.TearDownFunc) { Expect(tdf()).To(Succeed()) }(tearDown)
+
+			By("Waiting for all pods owned by the qsts to be ready")
+			err = env.WaitForPodReady(env.Namespace, podNameByIndex(qStsName, "0"))
+			Expect(err).NotTo(HaveOccurred())
+			err = env.WaitForPodReady(env.Namespace, podNameByIndex(qStsName, "1"))
+			Expect(err).NotTo(HaveOccurred())
+			err = env.WaitForPodReady(env.Namespace, podNameByIndex(qStsName, "2"))
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Executing a cmd in pod index 2 to make the probe successful")
+			kubeConfig, err := utils.KubeConfig()
+			Expect(err).NotTo(HaveOccurred())
+			kclient, err := kubernetes.NewForConfig(kubeConfig)
+			Expect(err).NotTo(HaveOccurred())
+
+			p, err := env.GetPod(env.Namespace, fmt.Sprintf("%s-2", qStsName))
+			Expect(err).NotTo(HaveOccurred())
+			ec, err := env.ExecPodCMD(
+				kclient,
+				kubeConfig,
+				p,
+				containerName,
+				cmdTouchScript,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ec).To(Equal(true))
+
+			By("Waiting for an event on a new active pod with index 2")
+			err = wait.PollImmediate(5*time.Second, 35*time.Second, func() (bool, error) {
+				return env.GetNamespaceEvents(env.Namespace,
+					qSts.ObjectMeta.Name,
+					string(qSts.ObjectMeta.UID),
+					eventReason,
+					activeEvent(qStsName, "2"),
+				)
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Executing a cmd in pod index 1 to make the probe successful")
+			kubeConfig, err = utils.KubeConfig()
+			Expect(err).NotTo(HaveOccurred())
+			kclient, err = kubernetes.NewForConfig(kubeConfig)
+			Expect(err).NotTo(HaveOccurred())
+
+			p, err = env.GetPod(env.Namespace, fmt.Sprintf("%s-1", qStsName))
+			Expect(err).NotTo(HaveOccurred())
+			ec, err = env.ExecPodCMD(
+				kclient,
+				kubeConfig,
+				p,
+				containerName,
+				cmdTouchScript,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ec).To(Equal(true))
+
+			By("Adding the pod-active label to pod with index 1")
+			err = env.PatchPod(env.Namespace, podNameByIndex(qStsName, "1"), patchOp, patchPath, patchValue)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Waiting for controller to remove the label from pod with index 2")
+			err = wait.PollImmediate(5*time.Second, 35*time.Second, func() (bool, error) {
+				return env.GetNamespaceEvents(env.Namespace,
+					qSts.ObjectMeta.Name,
+					string(qSts.ObjectMeta.UID),
+					eventReason,
+					passiveEvent(qStsName, "2"),
+				)
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
 	Context("when CRD does not specify a probe periodSeconds", func() {
 		cmdDate := []string{"/bin/sh", "-c", "date"}
 		It("should ensure the proper event takes place", func() {
@@ -405,7 +491,7 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 					objectName,
 					objectUID,
 					eventReason,
-					"periodSeconds probe was not specified, going to default to 10 secs",
+					"periodSeconds probe was not specified, going to default to 30 secs",
 				)
 			})
 			Expect(err).NotTo(HaveOccurred())

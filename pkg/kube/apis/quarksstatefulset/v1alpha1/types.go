@@ -31,7 +31,7 @@ var (
 	// LabelQStsName is the name of the QuarksStatefulSet owns this resource
 	LabelQStsName = fmt.Sprintf("%s/quarks-statefulset-name", apis.GroupName)
 	// LabelActiveContainer is the active container on an active/passive setup
-	LabelActiveContainer = fmt.Sprintf("%s/pod-designation", apis.GroupName)
+	LabelActiveContainer = fmt.Sprintf("%s/pod-active", apis.GroupName)
 )
 
 // QuarksStatefulSetSpec defines the desired state of QuarksStatefulSet
@@ -50,7 +50,7 @@ type QuarksStatefulSetSpec struct {
 
 	// Periodic probe for active/passive containers
 	// Only an active container will process request from a service
-	ActivePassiveProbe map[string]*corev1.Probe `json:"activepassiveprobe,omitempty"`
+	ActivePassiveProbe map[string]*corev1.Probe `json:"activePassiveProbe,omitempty"`
 }
 
 // QuarksStatefulSetStatus defines the observed state of QuarksStatefulSet

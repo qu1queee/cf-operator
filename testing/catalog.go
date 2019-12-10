@@ -571,8 +571,8 @@ func (c *Catalog) DefaultPodTemplateWithActiveLabel(name string) corev1.PodTempl
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				"testpod": "yes",
-				"quarks.cloudfoundry.org/pod-designation": "active",
+				"testpod":                            "yes",
+				"quarks.cloudfoundry.org/pod-active": "active",
 			},
 		},
 		Spec: c.Sleep1hPodSpec(),

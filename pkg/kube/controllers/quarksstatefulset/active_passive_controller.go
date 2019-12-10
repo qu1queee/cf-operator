@@ -18,14 +18,14 @@ import (
 )
 
 // AddStatefulSetActivePassive creates a new QuarksStatefulSet controller that watches multiple instances
-// of an specific resource, and decides which is active and which is passive
+// of a specific resource, and decides which is active and which is passive
 func AddStatefulSetActivePassive(ctx context.Context, config *config.Config, mgr manager.Manager) error {
 	ctx = ctxlog.NewContextWithRecorder(ctx, "active-passive-reconciler", mgr.GetEventRecorderFor("quarks-active-passive-recorder"))
 	kubeConfig, _ := KubeConfig()
 
 	kclient, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
-		return errors.Wrap(err, "TODO")
+		return errors.Wrap(err, "failed retrieving kubernetes client configuration")
 	}
 
 	r := NewActivePassiveReconciler(ctx, config, mgr, kclient)
@@ -36,7 +36,7 @@ func AddStatefulSetActivePassive(ctx context.Context, config *config.Config, mgr
 		MaxConcurrentReconciles: config.MaxQuarksStatefulSetWorkers,
 	})
 	if err != nil {
-		return errors.Wrap(err, "Adding active-passive controller to manager failed.")
+		return errors.Wrap(err, "adding active-passive controller to manager failed")
 	}
 
 	stsPredicates := predicate.Funcs{
@@ -75,7 +75,7 @@ func AddStatefulSetActivePassive(ctx context.Context, config *config.Config, mgr
 		&handler.EnqueueRequestForObject{},
 		stsPredicates)
 	if err != nil {
-		return errors.Wrapf(err, "Watching QuarksStatefulSet failed in active/passive controller.")
+		return errors.Wrapf(err, "watching QuarksStatefulSet failed in active/passive controller")
 	}
 
 	return nil

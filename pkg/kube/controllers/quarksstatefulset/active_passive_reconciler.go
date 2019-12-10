@@ -2,10 +2,8 @@ package quarksstatefulset
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	qstsv1a1 "code.cloudfoundry.org/cf-operator/pkg/kube/apis/quarksstatefulset/v1alpha1"
@@ -16,7 +14,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientscheme "k8s.io/client-go/kubernetes/scheme"
@@ -29,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-// NewActivePassiveReconciler returns a new reconcile.Reconciler for active/passive controller
+// NewActivePassiveReconciler returns a new reconcile.Reconciler for the active/passive controller
 func NewActivePassiveReconciler(ctx context.Context, config *config.Config, mgr manager.Manager, kclient kubernetes.Interface) reconcile.Reconciler {
 	return &ReconcileStatefulSetActivePassive{
 		ctx:        ctx,
@@ -37,24 +34,24 @@ func NewActivePassiveReconciler(ctx context.Context, config *config.Config, mgr 
 		client:     mgr.GetClient(),
 		kclient:    kclient,
 		scheme:     mgr.GetScheme(),
-		kubeconfig: mgr.GetConfig(),
+		restConfig: mgr.GetConfig(),
 	}
 }
 
-// ReconcileStatefulSetActivePassive reconciles an QuarksStatefulSet object when references changes
+// ReconcileStatefulSetActivePassive reconciles an QuarksStatefulSet object when references change
 type ReconcileStatefulSetActivePassive struct {
 	ctx        context.Context
 	client     crc.Client
 	kclient    kubernetes.Interface
 	scheme     *runtime.Scheme
 	config     *config.Config
-	kubeconfig *restclient.Config
+	restConfig *restclient.Config
 }
 
-// Reconcile reads that state of the cluster for a QuarksStatefulSet object
+// Reconcile reads the state of the cluster for a QuarksStatefulSet object
 // and makes changes based on the state read and what is in the QuarksStatefulSet.Spec
 // Note:
-// The Reconcile Loop will always requeue the request under completition. For this specific
+// The Reconcile Loop will always requeue the request stop before under completition. For this specific
 // loop, the requeue will happen after the ActivePassiveProbe PeriodSeconds is reached.
 func (r *ReconcileStatefulSetActivePassive) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	qSts := &qstsv1a1.QuarksStatefulSet{}
@@ -67,7 +64,7 @@ func (r *ReconcileStatefulSetActivePassive) Reconcile(request reconcile.Request)
 
 	if err := r.client.Get(ctx, request.NamespacedName, qSts); err != nil {
 		if apierrors.IsNotFound(err) {
-			// Reconcile successful - don´t requeue
+			// Reconcile successful - don't requeue
 			ctxlog.Infof(ctx, "Failed to find quarks statefulset '%s', not retrying: %s", request.NamespacedName, err)
 			return reconcile.Result{}, nil
 		}
@@ -76,30 +73,16 @@ func (r *ReconcileStatefulSetActivePassive) Reconcile(request reconcile.Request)
 		return reconcile.Result{}, err
 	}
 
-	statefulSetVersions, err := r.listStatefulSetVersions(ctx, qSts)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-	maxAvailableVersion := qSts.GetMaxAvailableVersion(statefulSetVersions)
-
-	statefulSets, err := listStatefulSetsFromInformer(ctx, r.client, qSts)
+	statefulSets, _, err := GetMaxStatefulSetVersion(ctx, r.client, qSts)
 	if err != nil {
 		// Reconcile failed due to error - requeue
-		return reconcile.Result{}, errors.Wrapf(err, "couldn't list StatefulSets for active/passive reconciliation.")
+		return reconcile.Result{}, errors.Wrapf(err, "couldn't list StatefulSets for active/passive reconciliation")
 	}
 
-	// Retrieve the last versioned statefulset, based on the max available version
-	desiredSts, err := getDesiredSts(statefulSets, fmt.Sprintf("%d", maxAvailableVersion))
+	ownedPods, err := r.getStsPodList(ctx, statefulSets)
 	if err != nil {
 		// Reconcile failed due to error - requeue
-		return reconcile.Result{}, errors.Wrapf(err, "couldn´t get the last versioned statefulset owned by QuarksStatefulSet")
-	}
-
-	// ctxlog.Info(ctx, "Max available version for quarks sts'", qSts.Name, "' is version '", maxAvailableVersion, "' in namespace '", qSts.Namespace, "'.")
-	ownedPods, err := r.getStsPodList(ctx, desiredSts)
-	if err != nil {
-		// Reconcile failed due to error - requeue
-		return reconcile.Result{}, errors.Wrapf(err, "couldn't retrieve pod items from sts: %s", desiredSts.Name)
+		return reconcile.Result{}, errors.Wrapf(err, "couldn't retrieve pod items from sts: %s", qSts.Name)
 	}
 
 	// retrieves the ActivePassiveProbe children key,
@@ -111,7 +94,7 @@ func (r *ReconcileStatefulSetActivePassive) Reconcile(request reconcile.Request)
 		return reconcile.Result{}, errors.Wrapf(err, "None container name found in probe for %s QuarksStatefulSet", qSts.Name)
 	}
 
-	err = r.defineActiveContainer(ctx, containerName, ownedPods, qSts)
+	err = r.markActiveContainers(ctx, containerName, ownedPods, qSts)
 	if err != nil {
 		// Reconcile failed due to error - requeue
 		return reconcile.Result{}, err
@@ -119,23 +102,24 @@ func (r *ReconcileStatefulSetActivePassive) Reconcile(request reconcile.Request)
 
 	periodSeconds := time.Second * time.Duration(qSts.Spec.ActivePassiveProbe[containerName].PeriodSeconds)
 	if periodSeconds == (time.Second * time.Duration(0)) {
-		ctxlog.WithEvent(qSts, "active-passive").Debugf(ctx, "periodSeconds probe was not specified, going to default to 10 secs")
-		periodSeconds = time.Second * 5
+		ctxlog.WithEvent(qSts, "active-passive").Debugf(ctx, "periodSeconds probe was not specified, going to default to 30 secs")
+		periodSeconds = time.Second * 30
 	}
 
 	// Reconcile for any reason than error after the ActivePassiveProbe PeriodSeconds
 	return reconcile.Result{RequeueAfter: periodSeconds}, nil
 }
 
-func (r *ReconcileStatefulSetActivePassive) defineActiveContainer(ctx context.Context, container string, pods *corev1.PodList, qSts *qstsv1a1.QuarksStatefulSet) (err error) {
+func (r *ReconcileStatefulSetActivePassive) markActiveContainers(ctx context.Context, container string, pods *corev1.PodList, qSts *qstsv1a1.QuarksStatefulSet) (err error) {
 	var p *corev1.Pod
+	var activePodsCount int
 	labelledPods := r.getActiveLabels(pods, container)
 
 	probeCmd := qSts.Spec.ActivePassiveProbe[container].Exec.Command
 
 	// switch depending on pods with active label
 	switch pl := len(labelledPods); {
-	// Nothing have been labeled yet
+	// Nothing has been labeled yet
 	case pl == 0:
 		ctxlog.WithEvent(qSts, "active-passive").Debugf(
 			ctx,
@@ -172,20 +156,39 @@ func (r *ReconcileStatefulSetActivePassive) defineActiveContainer(ctx context.Co
 				p.Name,
 			)
 			if probeSucceeded, _ := r.execContainerCmd(&p, container, probeCmd); !probeSucceeded {
-				l := p.GetLabels()
-				delete(l, qstsv1a1.LabelActiveContainer)
-				err = r.client.Update(r.ctx, &p)
-				if err != nil {
+				if err := r.deleteActiveLabel(ctx, &p, qSts); err != nil {
 					return err
 				}
-				ctxlog.WithEvent(qSts, "active-passive").Debugf(
-					ctx,
-					"pod %s promoted to passive",
-					p.Name,
-				)
+				continue
 			}
+
+			// remove active label from a pod, when already one
+			// pod is active and it just passed the probe
+			if activePodsCount >= 1 {
+				if err := r.deleteActiveLabel(ctx, &p, qSts); err != nil {
+					return err
+				}
+			}
+			activePodsCount = activePodsCount + 1
 		}
+
 	}
+
+	return nil
+}
+
+func (r *ReconcileStatefulSetActivePassive) deleteActiveLabel(ctx context.Context, p *corev1.Pod, qSts *qstsv1a1.QuarksStatefulSet) error {
+	l := p.GetLabels()
+	delete(l, qstsv1a1.LabelActiveContainer)
+	err := r.client.Update(r.ctx, p)
+	if err != nil {
+		return err
+	}
+	ctxlog.WithEvent(qSts, "active-passive").Debugf(
+		ctx,
+		"pod %s promoted to passive",
+		p.Name,
+	)
 	return nil
 }
 
@@ -223,7 +226,7 @@ func (r *ReconcileStatefulSetActivePassive) execContainerCmd(pod *corev1.Pod, co
 			Stderr:    false,
 		}, clientscheme.ParameterCodec)
 
-	executor, err := remotecommand.NewSPDYExecutor(r.kubeconfig, "POST", req.URL())
+	executor, err := remotecommand.NewSPDYExecutor(r.restConfig, "POST", req.URL())
 	if err != nil {
 		return false, errors.New("failed to initialize remote command executor")
 	}
@@ -249,81 +252,6 @@ func (r *ReconcileStatefulSetActivePassive) getStsPodList(ctx context.Context, d
 		return nil, err
 	}
 	return podList, nil
-}
-
-func (r *ReconcileStatefulSetActivePassive) listStatefulSetVersions(ctx context.Context, qStatefulSet *qstsv1a1.QuarksStatefulSet) (map[int]bool, error) {
-	ctxlog.Debug(ctx, "Listing StatefulSets owned by QuarksStatefulSet '", qStatefulSet.Name, "'.")
-
-	versions := map[int]bool{}
-
-	statefulSets, err := listStatefulSetsFromInformer(ctx, r.client, qStatefulSet)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, statefulSet := range statefulSets {
-		strVersion, found := statefulSet.Annotations[qstsv1a1.AnnotationVersion]
-		if !found {
-			return versions, errors.Errorf("version annotation is not found from: %+v", statefulSet.Annotations)
-		}
-
-		version, err := strconv.Atoi(strVersion)
-		if err != nil {
-			return versions, errors.Wrapf(err, "version annotation is not an int: %s", strVersion)
-		}
-
-		ready, err := r.isStatefulSetReady(ctx, &statefulSet)
-		if err != nil {
-			return nil, err
-		}
-
-		versions[version] = ready
-	}
-
-	return versions, nil
-}
-
-func (r *ReconcileStatefulSetActivePassive) isStatefulSetReady(ctx context.Context, statefulSet *appsv1.StatefulSet) (bool, error) {
-	podLabels := map[string]string{appsv1.StatefulSetRevisionLabel: statefulSet.Status.CurrentRevision}
-
-	podList := &corev1.PodList{}
-	err := r.client.List(ctx,
-		podList,
-		crc.InNamespace(statefulSet.Namespace),
-		crc.MatchingLabels(podLabels),
-	)
-
-	if err != nil {
-		return false, err
-	}
-
-	for _, pod := range podList.Items {
-		if metav1.IsControlledBy(&pod, statefulSet) {
-			if podutil.IsPodReady(&pod) {
-				ctxlog.Debugf(ctx, "Pod '%s' owned by StatefulSet '%s' is running.", pod.Name, statefulSet.Name)
-				return true, nil
-			}
-		}
-	}
-
-	return false, nil
-}
-
-func getDesiredSts(sts []appsv1.StatefulSet, maxVersion string) (*appsv1.StatefulSet, error) {
-	dS := &appsv1.StatefulSet{}
-	for _, statefulSet := range sts {
-		strVersion, found := statefulSet.Annotations[qstsv1a1.AnnotationVersion]
-		if !found {
-			return nil, errors.New("non versioned statefulset found")
-		}
-		if strVersion == string(maxVersion) {
-			if statefulSet.Spec.Replicas != nil {
-				return &statefulSet, nil
-			}
-		}
-
-	}
-	return dS, errors.New("non desired statefulset found")
 }
 
 func getProbeContainerName(p map[string]*corev1.Probe) (string, error) {

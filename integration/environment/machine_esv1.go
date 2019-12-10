@@ -301,7 +301,7 @@ func (m *Machine) ExecPodCMD(client kubernetes.Interface, rc *rest.Config, pod *
 	return true, nil
 }
 
-// PatchPod applies a patch into an specific pod
+// PatchPod applies a patch into a specific pod
 // operation can be of the form add,remove,replace
 // See https://tools.ietf.org/html/rfc6902 for more information
 func (m *Machine) PatchPod(namespace string, name string, o string, p string, v string) error {

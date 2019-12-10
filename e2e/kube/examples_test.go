@@ -113,14 +113,14 @@ var _ = Describe("Examples Directory", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("label the first pod as active", func() {
+		It("it labels the first pod as active", func() {
 			yamlUpdatedFilePath := examplesDir + "quarks-statefulset/qstatefulset_active_passive.yaml"
 			By("Applying a quarkstatefulset with active-passive probe")
 			err := cmdHelper.Apply(namespace, yamlUpdatedFilePath)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = wait.PollImmediate(time.Second*5, time.Second*35, func() (bool, error) {
-				err := kubectl.WaitForPod(namespace, "quarks.cloudfoundry.org/pod-designation", "example-quarks-statefulset-0")
+				err := kubectl.WaitForPod(namespace, "quarks.cloudfoundry.org/pod-active", "example-quarks-statefulset-0")
 				if err != nil {
 					return false, err
 				}
