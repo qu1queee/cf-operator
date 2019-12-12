@@ -111,105 +111,72 @@ func (r *ReconcileStatefulSetActivePassive) Reconcile(request reconcile.Request)
 }
 
 func (r *ReconcileStatefulSetActivePassive) markActiveContainers(ctx context.Context, container string, pods *corev1.PodList, qSts *qstsv1a1.QuarksStatefulSet) (err error) {
-	var p *corev1.Pod
-	var activePodsCount int
-	labelledPods := r.getActiveLabels(pods, container)
 
 	probeCmd := qSts.Spec.ActivePassiveProbe[container].Exec.Command
 
-	// switch depending on pods with active label
-	switch pl := len(labelledPods); {
-	// Nothing has been labeled yet
-	case pl == 0:
+	for _, pod := range pods.Items {
 		ctxlog.WithEvent(qSts, "active-passive").Debugf(
 			ctx,
-			"there is no active pod",
+			"validating probe in pod: %s",
+			pod.Name,
 		)
-
-		p, err = r.getActivePod(pods, container, probeCmd)
-		if err != nil {
-			return err
-		}
-
-		podLabels := p.GetLabels()
-		if podLabels == nil {
-			podLabels = map[string]string{}
-
-		}
-
-		podLabels[qstsv1a1.LabelActiveContainer] = "active"
-
-		err = r.client.Update(r.ctx, p)
-		if err != nil {
-			return err
-		}
-		ctxlog.WithEvent(qSts, "active-passive").Debugf(
-			ctx,
-			"pod %s promoted to active",
-			p.Name,
-		)
-	case pl > 0:
-		for _, p := range labelledPods {
-			ctxlog.WithEvent(qSts, "active-passive").Debugf(
-				ctx,
-				"validating probe in active pod: %s",
-				p.Name,
-			)
-			if probeSucceeded, _ := r.execContainerCmd(&p, container, probeCmd); !probeSucceeded {
-				if err := r.deleteActiveLabel(ctx, &p, qSts); err != nil {
-					return err
-				}
-				continue
+		succeed, _ := r.execContainerCmd(&pod, container, probeCmd)
+		if succeed && podutil.IsPodReady(&pod) {
+			// mark as active
+			err := r.addActiveLabel(ctx, &pod, qSts)
+			if err != nil {
+				return errors.Wrapf(err, "couldn't label pod %s as active", pod.Name)
 			}
-
-			// remove active label from a pod, when already one
-			// pod is active and it just passed the probe
-			if activePodsCount >= 1 {
-				if err := r.deleteActiveLabel(ctx, &p, qSts); err != nil {
-					return err
-				}
+		} else {
+			// mark as passive
+			err := r.deleteActiveLabel(ctx, &pod, qSts)
+			if err != nil {
+				return errors.Wrapf(err, "couldn't remove label from active pod %s", pod.Name)
 			}
-			activePodsCount = activePodsCount + 1
 		}
-
 	}
-
 	return nil
 }
 
+func (r *ReconcileStatefulSetActivePassive) addActiveLabel(ctx context.Context, p *corev1.Pod, qSts *qstsv1a1.QuarksStatefulSet) error {
+	podLabels := p.GetLabels()
+	if podLabels == nil {
+		podLabels = map[string]string{}
+	}
+
+	if _, found := podLabels[qstsv1a1.LabelActiveContainer]; found {
+		return nil
+	}
+
+	podLabels[qstsv1a1.LabelActiveContainer] = "active"
+
+	return r.updatePodLabels(ctx, p, qSts, "active")
+}
+
 func (r *ReconcileStatefulSetActivePassive) deleteActiveLabel(ctx context.Context, p *corev1.Pod, qSts *qstsv1a1.QuarksStatefulSet) error {
-	l := p.GetLabels()
-	delete(l, qstsv1a1.LabelActiveContainer)
+	podLabels := p.GetLabels()
+
+	if _, found := podLabels[qstsv1a1.LabelActiveContainer]; !found {
+		return nil
+	}
+	delete(podLabels, qstsv1a1.LabelActiveContainer)
+
+	return r.updatePodLabels(ctx, p, qSts, "passive")
+}
+
+func (r *ReconcileStatefulSetActivePassive) updatePodLabels(ctx context.Context, p *corev1.Pod, qSts *qstsv1a1.QuarksStatefulSet, mode string) error {
 	err := r.client.Update(r.ctx, p)
 	if err != nil {
 		return err
 	}
+
 	ctxlog.WithEvent(qSts, "active-passive").Debugf(
 		ctx,
-		"pod %s promoted to passive",
+		"pod %s promoted to %s",
 		p.Name,
+		mode,
 	)
 	return nil
-}
-
-func (r *ReconcileStatefulSetActivePassive) getActivePod(pods *corev1.PodList, container string, cmd []string) (*corev1.Pod, error) {
-	for _, pod := range pods.Items {
-		if succeed, _ := r.execContainerCmd(&pod, container, cmd); succeed && podutil.IsPodReady(&pod) {
-			return &pod, nil
-		}
-	}
-	return nil, errors.Errorf("executing cmd: %v, in container: %s, failed\n", cmd, container)
-}
-
-func (r *ReconcileStatefulSetActivePassive) getActiveLabels(pods *corev1.PodList, container string) []corev1.Pod {
-	var labelledPods []corev1.Pod
-	for _, pod := range pods.Items {
-		labels := pod.GetLabels()
-		if _, found := labels[qstsv1a1.LabelActiveContainer]; found {
-			labelledPods = append(labelledPods, pod)
-		}
-	}
-	return labelledPods
 }
 
 func (r *ReconcileStatefulSetActivePassive) execContainerCmd(pod *corev1.Pod, container string, command []string) (bool, error) {

@@ -28,7 +28,7 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 		}
 
 		probeValidation = func(podName, index string) string {
-			return fmt.Sprintf("validating probe in active pod: %s", fmt.Sprintf("%s-%s", podName, index))
+			return fmt.Sprintf("validating probe in pod: %s", fmt.Sprintf("%s-%s", podName, index))
 		}
 
 		qStsName, podDesignationLabel, defaultPodLabel, eventReason, patchPath, patchValue, patchOp string
@@ -200,7 +200,6 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 		// the second one, runs as a patch, so that the next CRD probe executiong will pass
 		cmdCatScript := []string{"/bin/sh", "-c", "cat /tmp/busybox-script.sh"}
 		cmdTouchScript := []string{"/bin/sh", "-c", "touch /tmp/busybox-script.sh"}
-		// pod container name
 		containerName := "busybox"
 
 		It("should ensure only one pod is active", func() {
@@ -250,8 +249,6 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 				)
 			})
 			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking controller events")
 			err = wait.PollImmediate(5*time.Second, 35*time.Second, func() (bool, error) {
 				return env.GetNamespaceEvents(env.Namespace,
 					objectName,
@@ -385,7 +382,7 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 		})
 	})
 
-	Context("when multiple pods are active only one remains active", func() {
+	Context("when multiple pods pass the probe multiple remain active", func() {
 		cmdCatScript := []string{"/bin/sh", "-c", "cat /tmp/busybox-script.sh"}
 		cmdTouchScript := []string{"/bin/sh", "-c", "touch /tmp/busybox-script.sh"}
 		containerName := "busybox"
@@ -407,15 +404,42 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 			err = env.WaitForPodReady(env.Namespace, podNameByIndex(qStsName, "2"))
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Executing a cmd in pod index 2 to make the probe successful")
+			By("Executing a cmd in pod index 0 to make the probe successful")
 			kubeConfig, err := utils.KubeConfig()
 			Expect(err).NotTo(HaveOccurred())
 			kclient, err := kubernetes.NewForConfig(kubeConfig)
 			Expect(err).NotTo(HaveOccurred())
-
-			p, err := env.GetPod(env.Namespace, fmt.Sprintf("%s-2", qStsName))
+			p, err := env.GetPod(env.Namespace, fmt.Sprintf("%s-0", qStsName))
 			Expect(err).NotTo(HaveOccurred())
 			ec, err := env.ExecPodCMD(
+				kclient,
+				kubeConfig,
+				p,
+				containerName,
+				cmdTouchScript,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ec).To(Equal(true))
+
+			By("Waiting for an event on a new active pod with index 0")
+			err = wait.PollImmediate(5*time.Second, 35*time.Second, func() (bool, error) {
+				return env.GetNamespaceEvents(env.Namespace,
+					qSts.ObjectMeta.Name,
+					string(qSts.ObjectMeta.UID),
+					eventReason,
+					activeEvent(qStsName, "0"),
+				)
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Executing a cmd in pod index 2 to make the probe successful")
+			kubeConfig, err = utils.KubeConfig()
+			Expect(err).NotTo(HaveOccurred())
+			kclient, err = kubernetes.NewForConfig(kubeConfig)
+			Expect(err).NotTo(HaveOccurred())
+			p, err = env.GetPod(env.Namespace, fmt.Sprintf("%s-2", qStsName))
+			Expect(err).NotTo(HaveOccurred())
+			ec, err = env.ExecPodCMD(
 				kclient,
 				kubeConfig,
 				p,
@@ -441,7 +465,6 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 			Expect(err).NotTo(HaveOccurred())
 			kclient, err = kubernetes.NewForConfig(kubeConfig)
 			Expect(err).NotTo(HaveOccurred())
-
 			p, err = env.GetPod(env.Namespace, fmt.Sprintf("%s-1", qStsName))
 			Expect(err).NotTo(HaveOccurred())
 			ec, err = env.ExecPodCMD(
@@ -454,17 +477,13 @@ var _ = Describe("QuarksStatefulSetActivePassive", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ec).To(Equal(true))
 
-			By("Adding the pod-active label to pod with index 1")
-			err = env.PatchPod(env.Namespace, podNameByIndex(qStsName, "1"), patchOp, patchPath, patchValue)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Waiting for controller to remove the label from pod with index 2")
+			By("Waiting for an event on a new active pod with index 1")
 			err = wait.PollImmediate(5*time.Second, 35*time.Second, func() (bool, error) {
 				return env.GetNamespaceEvents(env.Namespace,
 					qSts.ObjectMeta.Name,
 					string(qSts.ObjectMeta.UID),
 					eventReason,
-					passiveEvent(qStsName, "2"),
+					activeEvent(qStsName, "2"),
 				)
 			})
 			Expect(err).NotTo(HaveOccurred())
