@@ -120,7 +120,15 @@ func (r *ReconcileStatefulSetActivePassive) markActiveContainers(ctx context.Con
 			"validating probe in pod: %s",
 			pod.Name,
 		)
-		succeed, _ := r.execContainerCmd(&pod, container, probeCmd)
+		succeed, err := r.execContainerCmd(&pod, container, probeCmd)
+		if err != nil {
+			ctxlog.WithEvent(qSts, "active-passive").Infof(
+				ctx,
+				"failed to execute active/passive probe: %s",
+				err.Error(),
+			)
+		}
+
 		if succeed && podutil.IsPodReady(&pod) {
 			// mark as active
 			err := r.addActiveLabel(ctx, &pod, qSts)
