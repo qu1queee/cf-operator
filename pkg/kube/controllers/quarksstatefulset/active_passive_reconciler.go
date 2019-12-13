@@ -115,31 +115,25 @@ func (r *ReconcileStatefulSetActivePassive) markActiveContainers(ctx context.Con
 	probeCmd := qSts.Spec.ActivePassiveProbe[container].Exec.Command
 
 	for _, pod := range pods.Items {
-		ctxlog.WithEvent(qSts, "active-passive").Debugf(
-			ctx,
-			"validating probe in pod: %s",
-			pod.Name,
-		)
-		succeed, err := r.execContainerCmd(&pod, container, probeCmd)
-		if err != nil {
-			ctxlog.WithEvent(qSts, "active-passive").Infof(
+		ctxlog.WithEvent(qSts, "active-passive").Debugf(ctx, "validating probe in pod: %s", pod.Name)
+		if err := r.execContainerCmd(&pod, container, probeCmd); err != nil {
+			ctxlog.WithEvent(qSts, "active-passive").Debugf(
 				ctx,
 				"failed to execute active/passive probe: %s",
-				err.Error(),
+				err,
 			)
-		}
-
-		if succeed && podutil.IsPodReady(&pod) {
-			// mark as active
-			err := r.addActiveLabel(ctx, &pod, qSts)
-			if err != nil {
-				return errors.Wrapf(err, "couldn't label pod %s as active", pod.Name)
-			}
-		} else {
 			// mark as passive
 			err := r.deleteActiveLabel(ctx, &pod, qSts)
 			if err != nil {
 				return errors.Wrapf(err, "couldn't remove label from active pod %s", pod.Name)
+			}
+		} else {
+			if podutil.IsPodReady(&pod) {
+				// mark as active
+				err := r.addActiveLabel(ctx, &pod, qSts)
+				if err != nil {
+					return errors.Wrapf(err, "couldn't label pod %s as active", pod.Name)
+				}
 			}
 		}
 	}
@@ -187,7 +181,7 @@ func (r *ReconcileStatefulSetActivePassive) updatePodLabels(ctx context.Context,
 	return nil
 }
 
-func (r *ReconcileStatefulSetActivePassive) execContainerCmd(pod *corev1.Pod, container string, command []string) (bool, error) {
+func (r *ReconcileStatefulSetActivePassive) execContainerCmd(pod *corev1.Pod, container string, command []string) error {
 	req := r.kclient.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(pod.Name).
@@ -203,10 +197,10 @@ func (r *ReconcileStatefulSetActivePassive) execContainerCmd(pod *corev1.Pod, co
 
 	executor, err := remotecommand.NewSPDYExecutor(r.restConfig, "POST", req.URL())
 	if err != nil {
-		return false, errors.New("failed to initialize remote command executor")
+		return errors.New("failed to initialize remote command executor")
 	}
 	if err = executor.Stream(remotecommand.StreamOptions{Stdin: os.Stdin, Stdout: os.Stdout, Tty: false}); err != nil {
-		return false, errors.Wrapf(err, "failed executing command in pod: %s, container: %s in namespace: %s",
+		return errors.Wrapf(err, "failed executing command in pod: %s, container: %s in namespace: %s",
 			pod.Name,
 			container,
 			pod.Namespace,
@@ -214,7 +208,7 @@ func (r *ReconcileStatefulSetActivePassive) execContainerCmd(pod *corev1.Pod, co
 	}
 	ctxlog.Info(r.ctx, "Succesfully exec cmd in container: ", container, ", inside pod: ", pod.Name)
 
-	return true, nil
+	return nil
 }
 
 func (r *ReconcileStatefulSetActivePassive) getStsPodList(ctx context.Context, desiredSts *appsv1.StatefulSet) (*corev1.PodList, error) {

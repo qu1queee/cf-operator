@@ -89,17 +89,44 @@ func (m *Machine) DeleteQuarksStatefulSet(namespace string, name string) error {
 	return client.Delete(name, &metav1.DeleteOptions{})
 }
 
-// GetPodNamesByLabel returns the active pod per namespace based on a lable
-func (m *Machine) GetPodNamesByLabel(namespace string, label string) (pList []string, err error) {
-	podList, err := m.GetPods(namespace, label)
-	if err != nil {
-		return pList, err
-	}
+// WaitForPodLabelToExist blocks until the specified label appears
+func (m *Machine) WaitForPodLabelToExist(n string, podName string, label string) error {
+	return wait.PollImmediate(m.PollInterval, m.PollTimeout, func() (bool, error) {
+		return m.PodLabelToExist(n, podName, label)
+	})
+}
 
-	for _, p := range podList.Items {
-		pList = append(pList, p.Name)
+// PodLabelToExist returns true if the label exist in the specified pod
+func (m *Machine) PodLabelToExist(n string, podName string, label string) (bool, error) {
+	pod, err := m.Clientset.CoreV1().Pods(n).Get(podName, metav1.GetOptions{})
+	if err != nil {
+		return false, err
 	}
-	return pList, nil
+	labels := pod.GetLabels()
+	if _, found := labels[label]; found {
+		return true, nil
+	}
+	return false, nil
+}
+
+// WaitForPodLabelToNotExist blocks until the specified label is not present
+func (m *Machine) WaitForPodLabelToNotExist(n string, podName string, label string) error {
+	return wait.PollImmediate(m.PollInterval, m.PollTimeout, func() (bool, error) {
+		return m.PodLabelToNotExist(n, podName, label)
+	})
+}
+
+// PodLabelToNotExist returns true if the label does not exist
+func (m *Machine) PodLabelToNotExist(n string, podName string, label string) (bool, error) {
+	pod, err := m.Clientset.CoreV1().Pods(n).Get(podName, metav1.GetOptions{})
+	if err != nil {
+		return false, err
+	}
+	labels := pod.GetLabels()
+	if _, found := labels[label]; !found {
+		return true, nil
+	}
+	return false, nil
 }
 
 // WaitForStatefulSetDelete blocks until the specified statefulSet is deleted
