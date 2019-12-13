@@ -68,4 +68,37 @@ var _ = Describe("BOSHLinks", func() {
 			})
 		})
 	})
+
+	Context("when deployment has explicit external link dependencies", func() {
+		BeforeEach(func() {
+			natsConfigMap := env.NatsConfigMap(deploymentName)
+			tearDown, err := env.CreateConfigMap(env.Namespace, natsConfigMap)
+			Expect(err).NotTo(HaveOccurred())
+			tearDowns = append(tearDowns, tearDown)
+
+			natsSecret := env.NatsSecret(deploymentName)
+			tearDown, err = env.CreateSecret(env.Namespace, natsSecret)
+			Expect(err).NotTo(HaveOccurred())
+			tearDowns = append(tearDowns, tearDown)
+
+			natsPod := env.NatsPod(deploymentName)
+			tearDown, err = env.CreatePod(env.Namespace, natsPod)
+			Expect(err).NotTo(HaveOccurred())
+			tearDowns = append(tearDowns, tearDown)
+
+			natsService := env.NatsService(deploymentName)
+			tearDown, err = env.CreateService(env.Namespace, natsService)
+			Expect(err).NotTo(HaveOccurred())
+			tearDowns = append(tearDowns, tearDown)
+
+			boshManifest = env.BOSHManifestSecret(manifestRef, bm.NatsSmokeTestWithExternalLinks)
+		})
+
+		It("creates a secret for each link", func() {
+			By("waiting for job rendering done", func() {
+				err := env.WaitForPods(env.Namespace, "quarks.cloudfoundry.org/instance-group-name=nats-smoke-tests")
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+	})
 })
